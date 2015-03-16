@@ -32,12 +32,17 @@
 	eclipse.compiler  = {}
 	eclipse.platforms = {}
 	eclipse.project   = {}
+	eclipse.cproject  = {}
 	eclipse.solution  = {}
 
 	io.indent = "\t" -- tabs, UTF8 XML file
 
 	function eclipse.esc(value)
 		return value
+	end
+
+	function eclipse.uid()
+		return math.random(2147483647)-1
 	end
 
 --
@@ -62,8 +67,8 @@
 
 		onproject = function(prj)
 			-- TODO: eclipse won't work where all projects are created in the same place as the workspace
-			premake.generate(prj, ".project", eclipse.project.generate_proj)
-			premake.generate(prj, ".cproject", eclipse.project.generate_cproj)
+			premake.generate(prj, ".project", eclipse.project.generate)
+			premake.generate(prj, ".cproject", eclipse.cproject.generate)
 		end,
 
 		oncleansolution = function(sln)
@@ -86,7 +91,7 @@
 -- For each registered premake <action>, we can simply add a file to the
 -- 'actions/' extension subdirectory
 --
-	for k,v in pairs({ "eclipse_solution", "eclipse_project" }) do
+	for k,v in pairs({ "eclipse_solution", "eclipse_project", "eclipse_cproject" }) do
 		require( v )
 		eclipse.printf( "Loaded action '%s.lua'", v )
 	end
