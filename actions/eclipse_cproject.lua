@@ -94,17 +94,37 @@
 
 			mingw = {
 				name = "MinGW GCC",
+				class = "cdt.managedbuild.toolchain.gnu.mingw",
 				project = "cdt.managedbuild.target.gnu.mingw",
 				config = "cdt.managedbuild.config.gnu.mingw",
-				extensions = { "pe", "gas", "gld", "gcc" },
-				class = "cdt.managedbuild.toolchain.gnu.mingw",
 				target = "cdt.managedbuild.target.gnu.platform.mingw",
 				builder = "cdt.managedbuild.tool.gnu.builder.mingw",
+				extensions = function(cfg)
+					-- TODO: collect binaryparser and errorparser's properly
+--					local toolset = cfg.eclipse.toolset
+--					local ext = {}
+--					table.insert(ext, toolset.binaryparser)
+--					for tool in toolset.tools do
+--						if tool.errorparser then
+--							-- TODO: if tool is active (buildpair ~= "base")
+--							table.insert(ext, tool.errorparser)
+--						end
+--					end
+
+					-- TODO: hack!! we should rather collect these from the 'active' tools
+					local ext = { "pe", "gas", "gcc" }
+					if cfg.kind ~= "StaticLib" then
+						table.insert(ext, "gld")
+					end
+					return ext
+				end,
+				binaryparser = "pe",
 				tools = {
 					as = {
 						name = "GCC Assembler",
 						class = "cdt.managedbuild.tool.gnu.assembler.mingw",
 						input = "cdt.managedbuild.tool.gnu.assembler.input",
+						errorparser = "gas",
 						command = function(cfg)
 							if cfg.gccprefix then return cfg.gccprefix .. "as" end
 						end,
@@ -154,6 +174,7 @@
 						class = "cdt.managedbuild.tool.gnu.c.compiler.mingw",
 						input = "cdt.managedbuild.tool.gnu.c.compiler.input",
 						scannerProfile = "org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileC",
+						errorparser = "gcc",
 						command = function(cfg)
 							if cfg.gccprefix then return cfg.gccprefix .. "gcc" end
 						end,
@@ -283,6 +304,9 @@
 								name = "All warnings (-Wall)",
 								class = "gnu.c.compiler.option.warnings.allwarn",
 								type = "boolean",
+								value = function(cfg)
+									return iif(cfg.warnings == "Off", "false")
+								end,
 							},
 							{
 								name = "Extra warnings (-Wextra)",
@@ -297,7 +321,7 @@
 								class = "gnu.c.compiler.option.warnings.toerrors",
 								type = "boolean",
 								value = function(cfg)
-									return iif(cfg.flags.FatalCompileWarnings, "true")
+									return iif(cfg.flags.FatalCompileWarnings and cfg.warnings ~= "Off", "true")
 								end,
 							},
 							{
@@ -333,6 +357,7 @@
 						class = "cdt.managedbuild.tool.gnu.cpp.compiler.mingw",
 						input = "cdt.managedbuild.tool.gnu.cpp.compiler.input",
 						scannerProfile = "org.eclipse.cdt.managedbuilder.core.GCCManagedMakePerProjectProfileCPP",
+						errorparser = "gcc",
 						command = function(cfg)
 							if cfg.gccprefix then return cfg.gccprefix .. "g++" end
 						end,
@@ -461,6 +486,9 @@
 								name = "All warnings (-Wall)",
 								class = "gnu.cpp.compiler.option.warnings.allwarn", -- *****
 								type = "boolean",
+								value = function(cfg)
+									return iif(cfg.warnings == "Off", "false")
+								end,
 							},
 							{
 								name = "Extra warnings (-Wextra)",
@@ -475,7 +503,7 @@
 								class = "gnu.cpp.compiler.option.warnings.toerrors",
 								type = "boolean",
 								value = function(cfg)
-									return iif(cfg.flags.FatalCompileWarnings, "true")
+									return iif(cfg.flags.FatalCompileWarnings and cfg.warnings ~= "Off", "true")
 								end,
 							},
 							{
@@ -505,6 +533,7 @@
 						name = "MinGW C Linker",
 						class = "cdt.managedbuild.tool.gnu.c.linker.mingw",
 						input = "cdt.managedbuild.tool.gnu.c.linker.input",
+						errorparser = "gld",
 						command = function(cfg)
 							if cfg.gccprefix then return cfg.gccprefix .. "gcc" end	-- should we use ld? eclipse seems to link with the compiler
 						end,
@@ -518,6 +547,7 @@
 						name = "MinGW C++ Linker",
 						class = "cdt.managedbuild.tool.gnu.cpp.linker.mingw",
 						input = "cdt.managedbuild.tool.gnu.cpp.linker.input",
+						errorparser = "gld",
 						command = function(cfg)
 							if cfg.gccprefix then return cfg.gccprefix .. "g++" end	-- should we use ld? eclipse seems to link with the compiler
 						end,
@@ -661,7 +691,8 @@
 
 
 	function m.build(cfg)
-		return "debug" -- TODO: detect 'release' somehow...
+		-- Note: isDebugBuild is kinda broken, we need to imprive it
+		return iif(config.isDebugBuild(cfg), "debug", "release")
 	end
 
 	function m.cfgname(cfg)
@@ -673,34 +704,45 @@
 		return cfgname
 	end
 
-	function m.getcompiler()
-		-- TODO: this needs some work... >_<
---		local tool = _OPTIONS.cc or cfg.toolset or p.GCC
-		local tool = _OPTIONS.cc or p.GCC
-		if os.is("windows") then
-			tool = "mingw"
+	function m.getcompiler(cfg)
+		local tool
+		if cfg then
+			tool = _OPTIONS.cc or cfg.toolset or p.GCC
+		else
+			-- TODO: this is a problem case, the tool can be requested outside of configuration scope...
+			tool = _OPTIONS.cc or p.GCC
+		end
+
+		-- TODO: this is pretty blunt!!
+		if tool == "gcc" then
+			if os.is("windows") then
+				tool = "mingw"
+			end
 		end
 		return tool
-
---		local toolset = p.tools[_OPTIONS.cc or cfg.toolset or p.GCC]
---		if not toolset then
---			error("Invalid toolset '" + (_OPTIONS.cc or cfg.toolset) + "'")
---		end
---		return toolset
 	end
 
 	function m.cproject.config_configurationDataProvider(cfg)
+		local e = cfg.eclipse
+		e.errorParsers = {}
 
-		local cfgname = eclipse.cfgname(cfg)
+		_p(3, '<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="%s" moduleId="org.eclipse.cdt.core.settings" name="%s">', e.class, e.cfgname)
 
-		_p(3, '<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="%s" moduleId="org.eclipse.cdt.core.settings" name="%s">', cfg.eclipse.class, cfgname)
 		_p(4, '<externalSettings/>')
+
 		_p(4, '<extensions>')
-		for _, extension in ipairs(cfg.eclipse.toolset.extensions) do
+		local ext = getvalue(cfg.eclipse.toolset.extensions, nil, cfg)
+		for _, extension in ipairs(ext) do
 			local ext = eclipse.cdt.extensions[extension]
 			_p(5, '<extension id="%s" point="%s"/>', ext.id, ext.point)
+
+			-- make a collection of error parsers, which will be used later...
+			if ext.point == "org.eclipse.cdt.core.ErrorParser" then
+				table.insert(e.errorParsers, ext.id)
+			end
 		end
 		_p(4, '</extensions>')
+
 		_p(3, '</storageModule>')
 	end
 
@@ -711,9 +753,14 @@
 
 	function m.cproject.toolchain_builder(cfg)
 		local e = cfg.eclipse
+
 		local path = "${workspace_loc:/e_app}/Debug" -- TODO: path is wrong!
 		local type = e.type or "base" -- TODO: when is 'base' used?!
-		_p(7, '<builder buildPath="%s" id="%s.%s.%s" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CDT Internal Builder" superClass="%s.%s"/>', path, e.toolset.builder, type, eclipse.uid(), e.toolset.builder, type)
+
+		-- TODO: we can supply parallel build options here...
+		local parallel = "" -- 'parallelBuildOn="true" parallelizationNumber="optimal" '
+
+		_p(7, '<builder buildPath="%s" id="%s.%s.%s" keepEnvironmentInBuildfile="false" managedBuildOn="true" name="CDT Internal Builder" %ssuperClass="%s.%s"/>', path, e.toolset.builder, type, eclipse.uid(), parallel, e.toolset.builder, type)
 	end
 
 	function m.cproject.tool_option(cfg, optiondesc, value)
@@ -753,7 +800,7 @@
 		local e = cfg.eclipse
 
 		local buildpair = getvalue(tool.buildpair, e.buildpair, cfg)
-		local hasOptions = buildpair ~= "base"
+		local hasOptions = buildpair ~= "base" -- TODO: I don't know if this is a good way to detect this...
 
 		local command = getvalue(tool.command, nil, cfg)
 		if command then
@@ -762,8 +809,10 @@
 			command = ""
 		end
 
-		-- TODO: work out error parser
-		local errorParser = "" -- 'errorParsers="org.eclipse.cdt.core.GLDErrorParser" '
+		local errorParser = ""
+		if tool.errorparser and hasOptions then
+			errorParser = 'errorParsers="' .. m.cdt.extensions[tool.errorparser].id .. '" '
+		end
 
 		local uid = iif(name == "c", e.c.uid, nil) or iif(name == "cpp", e.cpp.uid, nil) or eclipse.uid()
 
@@ -777,6 +826,9 @@
 				-- TODO: this shouldn't always be present...
 				uid = iif(name == "c", e.c.inputuid, nil) or iif(name == "cpp", e.cpp.inputuid, nil) or eclipse.uid()
 				_p(8, '<inputType id="%s.%s" superClass="%s"/>', tool.input, uid, tool.input)
+
+				-- TODO: linker outputType has: outputPrefix="lib"
+				-- cfg.targetprefix
 			end
 			_p(7, '</tool>')
 		end
@@ -786,10 +838,14 @@
 
 		local e = cfg.eclipse
 
-		local cfgname = eclipse.cfgname(cfg)
+		-- TODO: should we insert the project name directly?
+		local outputName = "${ProjName}" .. (cfg.targetsuffix or "")
+		local extension = ""
+		if cfg.targetextension then
+			-- TODO: cfg.targetextension must remove leading '.'!
+			extension = 'artifactExtension="' .. cfg.targetextension .. '" '
+		end
 
-		-- TODO:
-		local extension = "" -- 'artifactExtension="dll" ' -- .dll/.a both seem to use this...
 		local cleanCmd = "rm -rf"
 		local description = ""
 
@@ -809,12 +865,14 @@
 --			buildEvents = buildEvents .. ' prebuildStep="' .. cfg.prebuildcommands .. '"'
 		end
 
-		-- TODO: GAS, GCC, GLD all have error parsers...
-		local errorParser = "" -- 'errorParsers="org.eclipse.cdt.core.GASErrorParser;org.eclipse.cdt.core.GLDErrorParser;org.eclipse.cdt.core.GCCErrorParser" '
+		local errorParser = ""
+		if not table.isempty(e.errorParsers) then
+			errorParser = 'errorParsers="' .. table.implode(e.errorParsers, "", "", ";") .. '" '
+		end
 
 		_p(3, '<storageModule moduleId="cdtBuildSystem" version="4.0.0">')
-		_x(4, '<configuration %sartifactName="${ProjName}" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.%s" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.%s,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.%s" cleanCommand="%s" description="%s" %sid="%s" name="%s" parent="%s.%s"%s>',
-			extension, e.type, e.type, e.build, cleanCmd, description, errorParser, e.class, cfgname, e.toolset.config, e.buildpair, buildEvents)
+		_x(4, '<configuration %sartifactName="%s" buildArtefactType="org.eclipse.cdt.build.core.buildArtefactType.%s" buildProperties="org.eclipse.cdt.build.core.buildArtefactType=org.eclipse.cdt.build.core.buildArtefactType.%s,org.eclipse.cdt.build.core.buildType=org.eclipse.cdt.build.core.buildType.%s" cleanCommand="%s" description="%s" %sid="%s" name="%s" parent="%s.%s"%s>',
+			extension, outputName, e.type, e.type, e.build, cleanCmd, description, errorParser, e.class, e.cfgname, e.toolset.config, e.buildpair, buildEvents)
 		_p(5, '<folderInfo id="%s." name="/" resourcePath="">', e.class)
 		_p(6, '<toolChain id="%s.%s.%s" name="%s" superClass="%s.%s">', e.toolset.class, e.buildpair, eclipse.uid(), e.toolset.name, e.toolset.class, e.buildpair)
 
@@ -857,7 +915,7 @@
 
 			local e = cfg.eclipse
 			e.uid = eclipse.uid()
-			e.compiler = m.getcompiler() -- TODO: this sucks!
+			e.compiler = m.getcompiler(cfg)
 			e.toolset = m.cdt.toolsets[e.compiler]
 			e.type = prj.eclipse.type
 
@@ -868,6 +926,7 @@
 			e.build = m.build(cfg)
 			e.buildpair = e.type .. "." .. e.build
 			e.class = e.toolset.config .. "." .. e.buildpair .. "." .. e.uid
+			e.cfgname = m.cfgname(cfg)
 
 			e.c = {}
 			e.c.uid = eclipse.uid()
