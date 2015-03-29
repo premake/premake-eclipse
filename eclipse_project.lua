@@ -1,5 +1,5 @@
 --
--- Name:        actions/eclipse_project.lua
+-- Name:        eclipse/eclipse_project.lua
 -- Purpose:     Generate a Eclipse .project file.
 -- Author:      Manu Evans
 -- Created:     2014/12/22

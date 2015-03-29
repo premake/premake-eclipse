@@ -1,5 +1,5 @@
 --
--- Name:        actions/eclipse_solution.lua
+-- Name:        eclipse/eclipse_workspace.lua
 -- Purpose:     Generate a Eclipse solution.
 -- Author:      Manu Evans
 -- Created:     2014/12/22
@@ -13,9 +13,9 @@
 	local solution = p.solution
 
 --
--- Generate a Eclipse "solution" workspace, with support for the new platforms API.
+-- Generate an Eclipse workspace
 --
-	function eclipse.solution.generate(sln)
+	function eclipse.workspace.generate(sln)
 
 		p.eol("\r\n")
 		p.indent("\t")

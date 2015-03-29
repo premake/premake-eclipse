@@ -1,5 +1,5 @@
 --
--- Name:        actions/eclipse_cproject.lua
+-- Name:        eclipse/eclipse_cproject.lua
 -- Purpose:     Generate a Eclipse .cproject file.
 -- Author:      Manu Evans
 -- Created:     2014/12/22
