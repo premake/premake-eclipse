@@ -339,7 +339,7 @@
 								class = "gnu.c.compiler.option.misc.pic",
 								type = "boolean",
 								value = function(cfg)
-									return iif(cfg.kind == "SharedLib" and cfg.system ~= premake.WINDOWS, "true")
+									return iif(cfg.pic == "On", "true")
 								end,
 							},
 							{
@@ -516,7 +516,7 @@
 								class = "gnu.cpp.compiler.option.other.pic",
 								type = "boolean",
 								value = function(cfg)
-									return iif(cfg.kind == "SharedLib" and cfg.system ~= premake.WINDOWS, "true")
+									return iif(cfg.pic == "On", "true")
 								end,
 							},
 							{
